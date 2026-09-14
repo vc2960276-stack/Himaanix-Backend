@@ -431,14 +431,7 @@ async function main() {
     res.status(500).json({ detail: err.message || "Internal server error" });
   });
 
-  app.listen(PORT, "0.0.0.0", () => {
-    console.log(
-      `[himaanix] Node/Express API listening on 0.0.0.0:${PORT} (products=${SEED_PRODUCTS.length})`
-    );
-  });
+  module.exports = app
 }
 
-main().catch((err) => {
-  console.error("[fatal]", err);
-  process.exit(1);
-});
+
