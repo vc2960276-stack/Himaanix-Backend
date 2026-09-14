@@ -13,12 +13,12 @@ const { MongoClient } = require("mongodb");
 // Config
 // ---------------------------------------------------------------------------
 const MONGO_URL =
-  "mongodb+srv://vc2960276_db_user:VS4ohu2sZNRpsV3W@cluster0.ng9wd2l.mongodb.net/";
+  process.env.MONGO_URL;
 
-const DB_NAME = "test_database";
+const DB_NAME = process.env.DB_NAME;
 
 const JWT_SECRET =
-  "9a7b3f2e1c4d5f6789ab0cde1f234567890abcdef1234567890abcdef1234567";
+  process.env.JWT_SECRET;
 
 const ADMIN_EMAIL = "admin@himaanix.com";
 
