@@ -5,7 +5,9 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "dev": "node --watch server.js"
+    "dev": "node --watch server.js",
+      "build": "node -e \"console.log('No build required for this Node.js backend')\""
+
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
