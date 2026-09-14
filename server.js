@@ -265,11 +265,7 @@ async function main() {
   app.use(cookieParser());
   app.use(
     cors({
-      origin: [
-        "https://himaanix-frontend.vercel.app",
-        "http://localhost:3000",
-      ],
-      credentials: true,
+      origin: "*",
       methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     })
   );
