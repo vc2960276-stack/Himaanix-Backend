@@ -13,13 +13,21 @@ const { MongoClient } = require("mongodb");
 // ---------------------------------------------------------------------------
 // Config
 // ---------------------------------------------------------------------------
-MONGO_URL = "mongodb+srv://vc2960276_db_user:VS4ohu2sZNRpsV3W@cluster0.ng9wd2l.mongodb.net/"
-DB_NAME = "test_database"
-CORS_ORIGINS = "*"
-JWT_SECRET = "9a7b3f2e1c4d5f6789ab0cde1f234567890abcdef1234567890abcdef1234567"
-ADMIN_EMAIL = "admin@himaanix.com"
-ADMIN_PASSWORD = "admin123"
-FRONTEND_URL = "https://himaanix-frontend.vercel.app"
+const MONGO_URL =
+  "mongodb+srv://vc2960276_db_user:VS4ohu2sZNRpsV3W@cluster0.ng9wd2l.mongodb.net/";
+
+const DB_NAME = "test_database";
+
+const JWT_SECRET =
+  "9a7b3f2e1c4d5f6789ab0cde1f234567890abcdef1234567890abcdef1234567";
+
+const ADMIN_EMAIL = "admin@himaanix.com";
+
+const ADMIN_PASSWORD = "admin123";
+
+const FRONTEND_URL = "https://himaanix-frontend.vercel.app";
+
+const PORT = 8001;
 if (!MONGO_URL || !DB_NAME || !JWT_SECRET) {
   console.error("[fatal] Missing MONGO_URL / DB_NAME / JWT_SECRET in environment");
   process.exit(1);
@@ -257,12 +265,14 @@ async function main() {
   app.use(cookieParser());
   app.use(
     cors({
-      origin: [FRONTEND_URL, "http://localhost:3000"],
+      origin: [
+        "https://himaanix-frontend.vercel.app",
+        "http://localhost:3000",
+      ],
       credentials: true,
       methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     })
   );
-
   const api = express.Router();
 
   // ------------------------------------------------------------- Products
@@ -426,9 +436,10 @@ async function main() {
     res.status(500).json({ detail: err.message || "Internal server error" });
   });
 
-  const port = Number(process.env.PORT || 8001);
-  app.listen(port, "0.0.0.0", () => {
-    console.log(`[himaanix] Node/Express API listening on 0.0.0.0:${port} (products=${SEED_PRODUCTS.length})`);
+  app.listen(PORT, "0.0.0.0", () => {
+    console.log(
+      `[himaanix] Node/Express API listening on 0.0.0.0:${PORT} (products=${SEED_PRODUCTS.length})`
+    );
   });
 }
 
