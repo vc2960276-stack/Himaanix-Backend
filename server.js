@@ -13,15 +13,13 @@ const { MongoClient } = require("mongodb");
 // ---------------------------------------------------------------------------
 // Config
 // ---------------------------------------------------------------------------
-const {
-  MONGO_URL,
-  DB_NAME,
-  JWT_SECRET,
-  ADMIN_EMAIL = "admin@himaanix.com",
-  ADMIN_PASSWORD = "admin123",
-  FRONTEND_URL = "http://localhost:3000",
-} = process.env;
-
+MONGO_URL = "mongodb+srv://vc2960276_db_user:VS4ohu2sZNRpsV3W@cluster0.ng9wd2l.mongodb.net/"
+DB_NAME = "test_database"
+CORS_ORIGINS = "*"
+JWT_SECRET = "9a7b3f2e1c4d5f6789ab0cde1f234567890abcdef1234567890abcdef1234567"
+ADMIN_EMAIL = "admin@himaanix.com"
+ADMIN_PASSWORD = "admin123"
+FRONTEND_URL = "https://himaanix-frontend.vercel.app"
 if (!MONGO_URL || !DB_NAME || !JWT_SECRET) {
   console.error("[fatal] Missing MONGO_URL / DB_NAME / JWT_SECRET in environment");
   process.exit(1);
