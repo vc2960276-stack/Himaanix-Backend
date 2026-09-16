@@ -53,10 +53,7 @@ async function getDB() {
       cachedDb = db;
       console.log("[mongodb] Connected to database:", DB_NAME);
       // Fire-and-forget seed on first connection; subsequent callers reuse the promise.
-      if (!seedPromise) seedPromise = seedDatabase(db).catch((e) => {
-        console.error("[seed] failed:", e);
-        seedPromise = null;
-      });
+
       return db;
     })().catch((error) => {
       dbPromise = null;
@@ -293,34 +290,169 @@ const SEED_PRODUCTS = (() => {
 // ---------------------------------------------------------------------------
 // Idempotent seed (safe under serverless — runs once per warm instance)
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// Shopify MongoDB product formatter
+// ---------------------------------------------------------------------------
 
-async function seedDatabase(db) {
-  await db.collection("users").createIndex({ email: 1 }, { unique: true });
+function formatShopifyProduct(product) {
+  const variants = Array.isArray(product.variants)
+    ? product.variants
+    : [];
 
-  // Products
-  const ops = SEED_PRODUCTS.map((p) => ({
-    updateOne: { filter: { id: p.id }, update: { $set: p }, upsert: true },
-  }));
-  if (ops.length) await db.collection("products").bulkWrite(ops, { ordered: false });
+  const firstVariant = variants[0] || {};
 
-  // Admin
-  const existing = await db.collection("users").findOne({ email: ADMIN_EMAIL });
-  if (!existing) {
-    await db.collection("users").insertOne({
-      id: uuid(),
-      email: ADMIN_EMAIL,
-      password_hash: await hashPassword(ADMIN_PASSWORD),
-      name: "HIMAANIX Admin",
-      role: "admin",
-      created_at: new Date().toISOString(),
-    });
+  // Product images
+  const images = Array.isArray(product.images)
+    ? product.images
+      .map((image) => image?.src)
+      .filter(Boolean)
+    : [];
+
+  // Product price
+  const price = Number(firstVariant.price) || 0;
+
+  const compareAtPrice = firstVariant.compare_at_price
+    ? Number(firstVariant.compare_at_price)
+    : null;
+
+  // Product tags
+
+  // Product category
+  const productType = product.product_type || "General";
+
+  const tags = Array.isArray(product.tags)
+    ? product.tags
+    : [];
+
+  const normalizedTags = tags.map((tag) =>
+    String(tag).trim().toLowerCase()
+  );
+
+  let category = "general";
+
+  if (
+    normalizedTags.includes("women") ||
+    normalizedTags.includes("woman") ||
+    normalizedTags.includes("female")
+  ) {
+    category = "women";
+  } else if (
+    normalizedTags.includes("men") ||
+    normalizedTags.includes("man") ||
+    normalizedTags.includes("male")
+  ) {
+    category = "men";
+  } else if (
+    normalizedTags.includes("kids") ||
+    normalizedTags.includes("kid") ||
+    normalizedTags.includes("children")
+  ) {
+    category = "kids";
   }
-  console.log(`[seed] products=${SEED_PRODUCTS.length} admin=${ADMIN_EMAIL}`);
-}
 
-// ---------------------------------------------------------------------------
-// Helpers — auth
-// ---------------------------------------------------------------------------
+  // Extract options
+  const options = Array.isArray(product.options)
+    ? product.options
+    : [];
+
+  const sizeOption = options.find(
+    (option) => option.name?.toLowerCase() === "size"
+  );
+
+  const colorOption = options.find(
+    (option) => option.name?.toLowerCase() === "color"
+  );
+
+  const sizes = sizeOption?.values || [];
+
+  const colors = colorOption?.values || [];
+
+  // Determine new product
+  const createdAt = product.created_at
+    ? new Date(product.created_at)
+    : null;
+
+  const isNew =
+    createdAt &&
+      !Number.isNaN(createdAt.getTime())
+      ? Date.now() - createdAt.getTime() <= 30 * 24 * 60 * 60 * 1000
+      : false;
+
+  // Popular based on tags
+  const isPopular = normalizedTags.some((tag) =>
+    tag.includes("popular") ||
+    tag.includes("best seller") ||
+    tag.includes("bestseller")
+  );
+
+  return {
+    id: String(product.id),
+
+    name: product.title || "Untitled Product",
+
+    title: product.title || "Untitled Product",
+
+    handle: product.handle || null,
+
+    price,
+
+    old_price: compareAtPrice,
+
+    compare_at_price: compareAtPrice,
+
+    category,
+
+    product_type: productType,
+
+    collection: null,
+
+    is_new: isNew,
+
+    is_popular: isPopular,
+
+    sizes: sizes.length ? sizes : ["ONE SIZE"],
+
+    colors: colors.length ? colors : ["Default"],
+
+    description: product.body_html || "",
+
+    details: [],
+
+    images,
+
+    variants: variants.map((variant) => ({
+      id: String(variant.id),
+
+      title: variant.title,
+
+      sku: variant.sku,
+
+      price: Number(variant.price) || 0,
+
+      compare_at_price: variant.compare_at_price
+        ? Number(variant.compare_at_price)
+        : null,
+
+      available: variant.available !== false,
+
+      option1: variant.option1 || null,
+
+      option2: variant.option2 || null,
+
+      option3: variant.option3 || null,
+    })),
+
+    tags,
+
+    vendor: product.vendor || null,
+
+    published_at: product.published_at || null,
+
+    created_at: product.created_at || null,
+
+    updated_at: product.updated_at || null,
+  };
+}
 
 async function hashPassword(password) { return bcrypt.hash(password, 10); }
 async function verifyPassword(password, hash) { return bcrypt.compare(password, hash); }
@@ -479,41 +611,152 @@ api.get("/", (_req, res) => {
 });
 
 // -------------------------------------------------------------- Products
+// -------------------------------------------------------------- Products
+api.get("/products-debug", async (req, res) => {
+  try {
+    const db = req.app.locals.db;
+
+    const data = await db.collection("products").aggregate([
+      {
+        $group: {
+          _id: "$product_type",
+          count: { $sum: 1 }
+        }
+      },
+      {
+        $sort: { count: -1 }
+      }
+    ]).toArray();
+
+    res.json(data);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ detail: error.message });
+  }
+});
+// Get all products
 api.get("/products", async (req, res) => {
   try {
     const db = req.app.locals.db;
+
     const query = {};
-    if (req.query.category) query.category = req.query.category;
-    if (req.query.is_new !== undefined) query.is_new = req.query.is_new === "true";
-    if (req.query.is_popular !== undefined) query.is_popular = req.query.is_popular === "true";
-    if (req.query.collection) query.collection = req.query.collection;
+
+    // Vendor filter stays in MongoDB
+    if (req.query.vendor) {
+      query.vendor = req.query.vendor;
+    }
 
     const products = await db
       .collection("products")
-      .find(query, { projection: { _id: 0 } })
+      .find(query, {
+        projection: { _id: 0 },
+      })
       .limit(500)
       .toArray();
 
-    res.json({ products });
+    // Format Shopify products first
+    let formattedProducts = products.map(formatShopifyProduct);
+
+    // -----------------------------------------
+    // CATEGORY FILTER
+    // -----------------------------------------
+    if (req.query.category) {
+      const category = String(req.query.category)
+        .toLowerCase()
+        .trim();
+
+      formattedProducts = formattedProducts.filter((product) => {
+        return product.category === category;
+      });
+    }
+
+    // -----------------------------------------
+    // PRODUCT TYPE FILTER
+    // -----------------------------------------
+    if (req.query.product_type) {
+      const productType = String(req.query.product_type)
+        .toLowerCase()
+        .trim();
+
+      formattedProducts = formattedProducts.filter((product) => {
+        return product.product_type.toLowerCase() === productType;
+      });
+    }
+
+    // -----------------------------------------
+    // NEW FILTER
+    // -----------------------------------------
+    if (req.query.is_new !== undefined) {
+      const isNew =
+        String(req.query.is_new).toLowerCase() === "true";
+
+      formattedProducts = formattedProducts.filter(
+        (product) => product.is_new === isNew
+      );
+    }
+
+    // -----------------------------------------
+    // POPULAR FILTER
+    // -----------------------------------------
+    if (req.query.is_popular !== undefined) {
+      const isPopular =
+        String(req.query.is_popular).toLowerCase() === "true";
+
+      formattedProducts = formattedProducts.filter(
+        (product) => product.is_popular === isPopular
+      );
+    }
+
+    res.json({
+      products: formattedProducts,
+    });
   } catch (error) {
     console.error("[products]", error);
-    res.status(500).json({ detail: error.message || "Unable to fetch products" });
+
+    res.status(500).json({
+      detail: error.message || "Unable to fetch products",
+    });
   }
 });
 
+// Get single product
 api.get("/products/:id", async (req, res) => {
   try {
     const db = req.app.locals.db;
+
+    const productId = req.params.id;
+
     const product = await db
       .collection("products")
-      .findOne({ id: req.params.id }, { projection: { _id: 0 } });
-    if (!product) return res.status(404).json({ detail: "Product not found" });
-    res.json(product);
+      .findOne(
+        {
+          $or: [
+            { id: productId },
+            { id: Number(productId) },
+          ],
+        },
+        {
+          projection: { _id: 0 },
+        }
+      );
+
+    if (!product) {
+      return res.status(404).json({
+        detail: "Product not found",
+      });
+    }
+
+    res.json(formatShopifyProduct(product));
   } catch (error) {
     console.error("[product]", error);
-    res.status(500).json({ detail: error.message || "Unable to fetch product" });
+
+    res.status(500).json({
+      detail: error.message || "Unable to fetch product",
+    });
   }
 });
+
+
 
 // -------------------------------------------------------------- Auth
 api.post("/auth/register", async (req, res) => {
