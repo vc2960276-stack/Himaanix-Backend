@@ -1245,17 +1245,23 @@ function formatShopifyProduct(product) {
       .filter(Boolean)
     : [];
 
-  const price = Number(firstVariant.price) || 0;
+  const price = Number(firstVariant.price ?? product.price) || 0;
 
-  const compareAtPrice = firstVariant.compare_at_price
-    ? Number(firstVariant.compare_at_price)
-    : null;
+  const compareAtPriceValue =
+    firstVariant.compare_at_price ??
+    product.compare_at_price ??
+    product.old_price;
+  const compareAtPrice =
+    compareAtPriceValue != null &&
+      Number.isFinite(Number(compareAtPriceValue))
+      ? Number(compareAtPriceValue)
+      : null;
 
   // ---------------------------------------------------------
   // PRODUCT TYPE
   // ---------------------------------------------------------
   const productType = String(
-    product.product_type || "General"
+    product.product_type || product.type || "General"
   ).trim();
 
   const normalizedProductType = productType.toLowerCase();
@@ -1279,7 +1285,9 @@ function formatShopifyProduct(product) {
   // ---------------------------------------------------------
   // CATEGORY
   // ---------------------------------------------------------
-  let category = "general";
+  let category = String(
+    product.category || "general"
+  ).trim().toLowerCase();
 
   // MEN
   if (
@@ -1353,18 +1361,22 @@ function formatShopifyProduct(product) {
 
   const colorOption = options.find(
     (option) =>
-      String(option?.name || "")
+      ["color", "colour"].includes(String(option?.name || "")
         .trim()
-        .toLowerCase() === "color"
+        .toLowerCase())
   );
 
   const sizes =
-    Array.isArray(sizeOption?.values)
+    Array.isArray(product.sizes)
+      ? product.sizes
+      : Array.isArray(sizeOption?.values)
       ? sizeOption.values
       : [];
 
   const colors =
-    Array.isArray(colorOption?.values)
+    Array.isArray(product.colors)
+      ? product.colors
+      : Array.isArray(colorOption?.values)
       ? colorOption.values
       : [];
 
@@ -1388,17 +1400,23 @@ function formatShopifyProduct(product) {
     "new arrivals"
   );
 
-  const isNew = isNewByDate || isNewByTag;
+  const isNew =
+    typeof product.is_new === "boolean"
+      ? product.is_new
+      : isNewByDate || isNewByTag;
 
   // ---------------------------------------------------------
   // POPULAR
   // ---------------------------------------------------------
-  const isPopular = normalizedTags.some(
-    (tag) =>
-      tag.includes("popular") ||
-      tag.includes("best seller") ||
-      tag.includes("bestseller")
-  );
+  const isPopular =
+    typeof product.is_popular === "boolean"
+      ? product.is_popular
+      : normalizedTags.some(
+        (tag) =>
+          tag.includes("popular") ||
+          tag.includes("best seller") ||
+          tag.includes("bestseller")
+      );
 
   // ---------------------------------------------------------
   // FINAL RESPONSE
@@ -1406,9 +1424,9 @@ function formatShopifyProduct(product) {
   return {
     id: String(product.id),
 
-    name: product.title || "Untitled Product",
+    name: product.title || product.name || "Untitled Product",
 
-    title: product.title || "Untitled Product",
+    title: product.title || product.name || "Untitled Product",
 
     handle: product.handle || null,
 
@@ -1422,7 +1440,7 @@ function formatShopifyProduct(product) {
 
     product_type: productType,
 
-    collection: null,
+    collection: product.collection || null,
 
     is_new: isNew,
 
@@ -1436,11 +1454,17 @@ function formatShopifyProduct(product) {
       ? colors
       : ["Default"],
 
-    description: product.body_html || "",
+    description: product.body_html || product.description || "",
 
-    details: [],
+    details: Array.isArray(product.details) ? product.details : [],
 
-    images,
+    images: images.length
+      ? images
+      : Array.isArray(product.images)
+        ? product.images
+          .map((image) => typeof image === "string" ? image : image?.src)
+          .filter(Boolean)
+        : [],
 
     variants: variants.map((variant) => ({
       id: String(variant.id),
@@ -1962,7 +1986,11 @@ api.get("/products", async (req, res) => {
         )
         : [];
 
-      let category = "general";
+      let category = String(
+        product.category || "general"
+      )
+        .trim()
+        .toLowerCase();
 
       // =========================
       // MEN
@@ -2103,6 +2131,76 @@ api.get("/products", async (req, res) => {
       formattedProducts = formattedProducts.filter(
         (product) =>
           product.is_popular === requestedIsPopular
+      );
+    }
+
+    // ---------------------------------------------------------
+    // SIZE + COLOR FILTERS
+    // ---------------------------------------------------------
+    const getFilterValues = (...keys) =>
+      keys
+        .flatMap((key) => {
+          const value = req.query[key];
+          return value === undefined
+            ? []
+            : Array.isArray(value)
+              ? value
+              : [value];
+        })
+        .flatMap((value) => String(value).split(","))
+        .map((value) => value.trim().toLowerCase())
+        .filter(Boolean);
+
+    const requestedSizes = getFilterValues("size", "sizes");
+    const requestedColors = getFilterValues(
+      "color",
+      "colors",
+      "colour",
+      "colours"
+    );
+
+    if (requestedSizes.length) {
+      formattedProducts = formattedProducts.filter((product) =>
+        (product.sizes || []).some((size) =>
+          requestedSizes.includes(String(size).trim().toLowerCase())
+        )
+      );
+    }
+
+    if (requestedColors.length) {
+      formattedProducts = formattedProducts.filter((product) =>
+        (product.colors || []).some((color) =>
+          requestedColors.includes(String(color).trim().toLowerCase())
+        )
+      );
+    }
+
+    // ---------------------------------------------------------
+    // PRICE FILTERS
+    // ---------------------------------------------------------
+    const parsePriceFilter = (...keys) => {
+      const value = keys
+        .map((key) => req.query[key])
+        .find((candidate) => candidate !== undefined);
+      const price = Number(value);
+
+      return value !== undefined && Number.isFinite(price)
+        ? price
+        : null;
+    };
+
+    const minPrice = parsePriceFilter("min_price", "minPrice");
+    const maxPrice = parsePriceFilter("max_price", "maxPrice");
+
+    if (minPrice !== null) {
+      formattedProducts = formattedProducts.filter(
+        (product) => Number(product.price) >= minPrice
+      );
+    }
+
+    if (maxPrice !== null) {
+      formattedProducts = formattedProducts.filter(
+        (product) => Number(product.price) <= maxPrice
       );
     }
 
@@ -2766,6 +2864,80 @@ api.patch(
         detail:
           error.message ||
           "Unable to update order status",
+      });
+    }
+  }
+);
+
+// ---------------------------------------------------------------------------
+// Contact form
+// ---------------------------------------------------------------------------
+
+api.post(
+  "/contact",
+  async (req, res) => {
+    try {
+      const {
+        name,
+        email,
+        subject,
+        message,
+      } = req.body || {};
+
+      if (
+        typeof name !== "string" ||
+        !name.trim()
+      ) {
+        return res.status(400).json({
+          detail: "Name is required.",
+        });
+      }
+
+      if (!isValidEmail(email)) {
+        return res.status(400).json({
+          detail: "Please enter a valid email.",
+        });
+      }
+
+      if (
+        typeof message !== "string" ||
+        !message.trim()
+      ) {
+        return res.status(400).json({
+          detail: "Message is required.",
+        });
+      }
+
+      const db = req.app.locals.db;
+
+      const payload = {
+        name: name.trim(),
+        email: email.toLowerCase().trim(),
+        subject: typeof subject === "string" ? subject.trim() : "",
+        message: message.trim(),
+        created_at: new Date().toISOString(),
+        status: "new",
+      };
+
+      await db
+        .collection("contact_messages")
+        .insertOne(payload);
+
+      res.json({
+        ok: true,
+        message:
+          "Your message has been sent successfully.",
+      });
+    } catch (error) {
+      console.error(
+        "[contact]",
+        error
+      );
+
+      res.status(500).json({
+        detail:
+          error.message ||
+          "Unable to send message",
       });
     }
   }
