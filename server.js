@@ -1186,6 +1186,7 @@ api.post(
         email,
         password,
         name,
+        mobile,
       } = req.body || {};
 
       if (!isValidEmail(email)) {
@@ -1214,6 +1215,25 @@ api.post(
         return res.status(400).json({
           detail:
             "Name is required",
+        });
+      }
+
+      const normalizedMobile =
+        typeof mobile === "string"
+          ? mobile.trim()
+          : "";
+
+      if (
+        mobile != null &&
+        (typeof mobile !== "string" ||
+          (normalizedMobile &&
+            (!/^\+?[0-9().\s-]+$/.test(normalizedMobile) ||
+              normalizedMobile.replace(/\D/g, "").length < 7 ||
+              normalizedMobile.replace(/\D/g, "").length > 15)))
+      ) {
+        return res.status(400).json({
+          detail:
+            "Invalid mobile number",
         });
       }
 
@@ -1254,6 +1274,9 @@ api.post(
         name:
           name.trim(),
 
+        mobile:
+          normalizedMobile || null,
+
         role:
           "customer",
 
@@ -1285,6 +1308,8 @@ api.post(
             normalizedEmail,
           name:
             userDoc.name,
+          mobile:
+            userDoc.mobile,
           role:
             "customer",
         },
@@ -1374,6 +1399,8 @@ api.post(
             normalizedEmail,
           name:
             user.name,
+          mobile:
+            user.mobile || null,
           role:
             user.role ||
             "customer",
@@ -1421,6 +1448,7 @@ api.get(
       id,
       email,
       name,
+      mobile,
       role,
     } = req.user;
 
@@ -1429,6 +1457,7 @@ api.get(
         id,
         email,
         name,
+        mobile: mobile || null,
         role:
           role ||
           "customer",
